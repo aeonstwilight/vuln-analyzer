@@ -197,12 +197,6 @@ server {
 
 ---
 
-## Security note
-
-Do not commit real scan CSVs to this repository. The `.gitignore` excludes `*.csv` by default — only files under `example_data/` are tracked.
-
----
-
 ## License
 
 MIT
