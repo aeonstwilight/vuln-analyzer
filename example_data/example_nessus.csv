@@ -1,0 +1,9 @@
+Plugin ID,Plugin Name,Host,CVSS,Exploit Available,First Discovered,Last Observed,Solution
+112526,SSL RC4 Cipher Suites Supported (Bar Mitzvah),192.168.1.45,7.4,No,2024-01-15,2024-03-01,Reconfigure the affected application to avoid use of RC4 ciphers.
+100871,OpenSSL RCE CVE-2024-0001,10.0.0.12,9.8,Yes,2024-02-20,2024-03-10,Upgrade OpenSSL to 3.2.1 or later.
+57582,SMB Signing Not Required,172.16.4.8,5.3,No,2023-11-01,2024-03-01,Enforce SMB signing via Group Policy.
+66334,Apache httpd 2.4.x Multiple Vulnerabilities,10.0.0.55,7.5,No,2024-03-01,2024-03-10,Upgrade Apache to 2.4.59 or later.
+10881,SSH Protocol Version 1 Detection,192.168.1.45,6.4,No,2023-08-15,2024-03-01,Disable SSH protocol version 1 in sshd_config.
+21643,SSL Certificate Cannot Be Trusted,10.0.0.12,6.5,No,2024-02-01,2024-03-10,Purchase or generate a valid certificate.
+33850,WinRM HTTP Unencrypted,172.16.4.8,7.1,No,2024-01-20,2024-03-01,Configure WinRM to use HTTPS only.
+19506,Nessus Scan Information,10.0.0.88,0.0,No,2024-03-10,2024-03-10,N/A
