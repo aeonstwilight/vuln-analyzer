@@ -163,7 +163,7 @@ def _fig_to_image(fig, width_inch, height_inch):
 
 
 def _chart_severity_donut(df):
-    sev_counts = df["Severity"].value_counts()
+    sev_counts = df["severity"].value_counts()
     labels = [s for s in ["Critical", "High", "Medium", "Low"] if s in sev_counts]
     sizes  = [sev_counts[s] for s in labels]
     clrs   = ["#E24B4A", "#EF9F27", "#378ADD", "#639922"][:len(labels)]
@@ -185,7 +185,7 @@ def _chart_severity_donut(df):
 
 
 def _chart_top_hosts(df, n=8):
-    top = df["Host"].value_counts().head(n)
+    top = df["host"].value_counts().head(n)
     fig, ax = plt.subplots(figsize=(3.5, 2.6))
     bars = ax.barh(top.index[::-1], top.values[::-1], color="#378ADD", height=0.55)
     ax.set_xlabel("Vulnerabilities", fontsize=7, color="#666666")
@@ -206,7 +206,7 @@ def _chart_aging_buckets(df):
     bins   = [0, 30, 60, 90, 180, 365, 10000]
     labels = ["0-30d", "31-60d", "61-90d", "91-180d", "181-365d", "365d+"]
     df = df.copy()
-    df["Bucket"] = pd.cut(df["Age_Days"], bins=bins, labels=labels)
+    df["Bucket"] = pd.cut(df["age_days"], bins=bins, labels=labels)
     counts = df["Bucket"].value_counts().reindex(labels, fill_value=0)
 
     fig, ax = plt.subplots(figsize=(5.5, 2.2))
@@ -230,9 +230,9 @@ def _chart_aging_buckets(df):
 def _chart_sla_compliance(df):
     sla_data = {}
     for sev in ["Critical", "High", "Medium", "Low"]:
-        sub = df[df["Severity"] == sev]
+        sub = df[df["severity"] == sev]
         total = len(sub)
-        expired = len(sub[sub["Expired"] == True])
+        expired = len(sub[sub["expired"] == True])
         sla_data[sev] = (total, expired)
 
     sevs   = [s for s in ["Critical", "High", "Medium", "Low"] if sla_data[s][0] > 0]
@@ -292,25 +292,25 @@ def _build_vuln_table(df_subset, col_widths, show_cols, col_headers):
 
     rows = [header_row]
     for _, row in df_subset.iterrows():
-        sev = str(row.get("Severity", ""))
+        sev = str(row.get("severity", ""))
         cells = []
         for col in show_cols:
             val = row.get(col, "")
-            if col == "Severity":
+            if col == "severity":
                 p = Paragraph(f"<b>{val}</b>", ParagraphStyle(
                     "sev", parent=small,
                     textColor=_sev_text_color(sev),
                     backColor=_sev_color(sev),
                 ))
-            elif col == "Expired":
+            elif col == "expired":
                 txt = "YES" if val else "no"
                 clr = colors.HexColor("#791F1F") if val else C_MUTED
                 p = Paragraph(txt, ParagraphStyle("exp", parent=small, textColor=clr))
-            elif col == "Days_Left":
+            elif col == "days_left":
                 txt = str(int(val)) if pd.notna(val) else "-"
                 clr = colors.HexColor("#791F1F") if (pd.notna(val) and val < 0) else C_TEXT
                 p = Paragraph(txt, ParagraphStyle("dl", parent=small, textColor=clr))
-            elif col == "CVSS":
+            elif col == "cvss":
                 p = Paragraph(f"{float(val):.1f}" if pd.notna(val) else "-", small)
             else:
                 p = Paragraph(str(val)[:80] if pd.notna(val) else "-", small)
@@ -512,23 +512,23 @@ def _build_findings(story, styles, df):
     findings = []
 
     # Most expired
-    expired_df = df[df["Expired"] == True].sort_values("Age_Days", ascending=False)
+    expired_df = df[df["expired"] == True].sort_values("age_days", ascending=False)
     if not expired_df.empty:
         worst = expired_df.iloc[0]
         findings.append(
-            f"<b>Oldest expired vulnerability:</b> {worst.get('Plugin Name','')} "
-            f"on host {worst.get('Host','')} — {int(worst.get('Age_Days',0))} days old "
-            f"({worst.get('Severity','')} / CVSS {worst.get('CVSS',0):.1f})"
+            f"<b>Oldest expired vulnerability:</b> {worst.get('plugin_name','')} "
+            f"on host {worst.get('host','')} — {int(worst.get('age_days',0))} days old "
+            f"({worst.get('severity','')} / CVSS {worst.get('cvss',0):.1f})"
         )
 
     # Hosts with most criticals
-    crit_hosts = df[df["Severity"] == "Critical"]["Host"].value_counts().head(3)
+    crit_hosts = df[df["severity"] == "Critical"]["host"].value_counts().head(3)
     if not crit_hosts.empty:
         host_str = ", ".join([f"{h} ({c})" for h, c in crit_hosts.items()])
         findings.append(f"<b>Hosts with most critical vulns:</b> {host_str}")
 
     # CVSS 9+
-    cvss9 = df[df["CVSS"] >= 9.0]
+    cvss9 = df[df["cvss"] >= 9.0]
     if not cvss9.empty:
         findings.append(
             f"<b>CVSS 9.0+ vulnerabilities:</b> {len(cvss9)} findings with maximum severity scores "
@@ -536,8 +536,8 @@ def _build_findings(story, styles, df):
         )
 
     # Exploit available
-    if "Exploit Available" in df.columns:
-        exploitable = df[df["Exploit Available"].astype(str).str.lower().isin(["yes", "true", "1"])]
+    if "exploit_available" in df.columns:
+        exploitable = df[df["exploit_available"].astype(str).str.lower().isin(["yes", "true", "1"])]
         if not exploitable.empty:
             findings.append(
                 f"<b>Exploitable vulnerabilities:</b> {len(exploitable)} findings have known exploit code available"
@@ -596,7 +596,7 @@ def _build_vuln_tables(story, styles, df):
     usable_w = PAGE_W - 2 * MARGIN
 
     for sev in ["Critical", "High", "Medium", "Low"]:
-        sub = df[df["Severity"] == sev].sort_values("Age_Days", ascending=False)
+        sub = df[df["severity"] == sev].sort_values("age_days", ascending=False)
         if sub.empty:
             continue
 
@@ -618,15 +618,15 @@ def _build_vuln_tables(story, styles, df):
             story.append(Spacer(1, 4))
 
         col_widths = [0.85*inch, 2.2*inch, 1.1*inch, 0.55*inch, 0.55*inch, 0.65*inch]
-        show_cols  = ["Plugin ID", "Plugin Name", "Host", "CVSS", "Age_Days", "Days_Left"]
-        headers    = ["Plugin ID", "Name", "Host", "CVSS", "Age", "Days Left"]
+        show_cols  = ["plugin_id", "plugin_name", "host", "cvss", "age_days", "days_left"]
+        headers    = ["Plugin ID", "Name", "Host", "CVSS", "Age (d)", "Days Left"]
 
         tbl = _build_vuln_table(show, col_widths, show_cols, headers)
         story.append(tbl)
         story.append(Spacer(1, 6))
 
         # Expired callout for this severity
-        expired_sub = sub[sub["Expired"] == True]
+        expired_sub = sub[sub["expired"] == True]
         if not expired_sub.empty:
             expired_note = (
                 f"<b>{len(expired_sub)}</b> of {len(sub)} {sev.lower()} vulnerabilities "
@@ -653,11 +653,11 @@ def _build_remediation(story, styles, df, profile):
 
     priorities = [
         ("Immediate (Critical & Expired High)", C_CRITICAL,
-         df[(df["Severity"] == "Critical") | ((df["Severity"] == "High") & (df["Expired"] == True))]),
+         df[(df["severity"] == "Critical") | ((df["severity"] == "High") & (df["expired"] == True))]),
         ("Short-term (High within SLA)",  C_HIGH,
-         df[(df["Severity"] == "High") & (df["Expired"] == False)]),
+         df[(df["severity"] == "High") & (df["expired"] == False)]),
         ("Medium-term (Medium)",          C_MEDIUM,
-         df[df["Severity"] == "Medium"]),
+         df[df["severity"] == "Medium"]),
     ]
 
     for label, clr, subset in priorities:
