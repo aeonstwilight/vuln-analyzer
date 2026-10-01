@@ -1,0 +1,5 @@
+host,internet_reachable,impact
+203.0.113.0/24,yes,N4
+10.20.1.15,yes,N5
+10.20.2.0/24,no,N4
+10.20.3.*,no,N2

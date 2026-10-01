@@ -1,0 +1,11 @@
+Plugin ID,Plugin Name,Host,CVSS,CVE,Exploit Available,First Discovered,Last Observed,Solution
+156002,Apache Log4j Remote Code Execution (Log4Shell),10.20.1.15,10.0,CVE-2021-44228,Yes,2026-09-22,2026-09-29,Upgrade Log4j to 2.17.1 or later.
+156002,Apache Log4j Remote Code Execution (Log4Shell),10.20.2.40,10.0,CVE-2021-44228,Yes,2026-09-22,2026-09-29,Upgrade Log4j to 2.17.1 or later.
+183976,Citrix NetScaler Sensitive Information Disclosure (Citrix Bleed),203.0.113.10,9.4,CVE-2023-4966,Yes,2026-09-27,2026-09-29,Upgrade NetScaler ADC and Gateway to a fixed build.
+192708,XZ Utils Backdoor,10.20.2.40,10.0,CVE-2024-3094,No,2026-08-10,2026-09-29,Downgrade xz to an unaffected version.
+73412,OpenSSL Heartbeat Information Disclosure (Heartbleed),203.0.113.25,7.5,CVE-2014-0160,Yes,2026-02-01,2026-09-29,Upgrade OpenSSL to 1.0.1g or later.
+187315,OpenSSH Terrapin Prefix Truncation Weakness,10.20.1.15,5.9,CVE-2023-48795,No,2026-07-15,2026-09-29,Disable the affected ciphers or upgrade OpenSSH.
+187315,OpenSSH Terrapin Prefix Truncation Weakness,10.20.3.7,5.9,CVE-2023-48795,No,2026-07-15,2026-09-29,Disable the affected ciphers or upgrade OpenSSH.
+57582,SSL Self-Signed Certificate,10.20.3.7,6.5,,No,2026-01-10,2026-09-29,Purchase or generate a proper certificate.
+10114,ICMP Timestamp Request Remote Date Disclosure,10.20.3.7,2.1,CVE-1999-0524,No,2025-11-01,2026-09-29,Filter ICMP timestamp requests.
+19506,Nessus Scan Information,10.20.1.15,0.0,,No,2026-09-29,2026-09-29,N/A

@@ -8,11 +8,35 @@ function buildForm(fields) {
   return form
 }
 
-export async function analyzeFile({ file, vendorOverride = 'Auto Detect', profileName = 'FedRAMP Moderate/High', customProfile = null }) {
+// Extra form fields for the FedRAMP 2026 profiles; the backend ignores them otherwise.
+function verFields(ver) {
+  if (!ver) return {}
+  return {
+    asset_context: ver.assetContext,
+    assume_internet_reachable: ver.assumeReachable ? 'true' : 'false',
+  }
+}
+
+async function downloadBlob(res, filename) {
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Request failed')
+  }
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export async function analyzeFile({ file, vendorOverride = 'Auto Detect', profileName = 'FedRAMP Moderate/High', customProfile = null, ver = null }) {
   const form = buildForm({
     file,
     vendor_override: vendorOverride,
     profile_name: profileName,
+    ...verFields(ver),
     ...(customProfile && {
       critical_days: customProfile.Critical,
       high_days:     customProfile.High,
@@ -43,21 +67,40 @@ export async function compareFiles({ oldFile, newFile, vendorOverride = 'Auto De
   return res.json()
 }
 
-export async function downloadPdfReport({ file, vendorOverride = 'Auto Detect', profileName = 'FedRAMP Moderate/High' }) {
-  const form = buildForm({ file, vendor_override: vendorOverride, profile_name: profileName })
-  const res = await fetch(`${BASE}/report/pdf`, { method: 'POST', body: form })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(err.detail || 'Report generation failed')
-  }
-  // Trigger browser download directly — no state gymnastics needed
-  const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `vuln_report_${new Date().toISOString().slice(0,10)}.pdf`
-  a.click()
-  URL.revokeObjectURL(url)
+export async function downloadPdfReport({ file, vendorOverride = 'Auto Detect', profileName = 'FedRAMP Moderate/High', ver = null }) {
+  const form = buildForm({ file, vendor_override: vendorOverride, profile_name: profileName, ...verFields(ver) })
+  const date = new Date().toISOString().slice(0, 10)
+  await downloadBlob(
+    await fetch(`${BASE}/report/pdf`, { method: 'POST', body: form }),
+    `vuln_report_${date}.pdf`
+  )
+}
+
+export async function downloadJsonReport({ file, vendorOverride = 'Auto Detect', profileName = 'FedRAMP Moderate/High', ver = null }) {
+  const form = buildForm({ file, vendor_override: vendorOverride, profile_name: profileName, ...verFields(ver) })
+  const date = new Date().toISOString().slice(0, 10)
+  await downloadBlob(
+    await fetch(`${BASE}/report/json`, { method: 'POST', body: form }),
+    `vuln_report_${date}.json`
+  )
+}
+
+export async function downloadOscalReport({ file, vendorOverride = 'Auto Detect', profileName = 'FedRAMP Moderate/High', systemName = 'Information System', ver = null }) {
+  const form = buildForm({ file, vendor_override: vendorOverride, profile_name: profileName, system_name: systemName, ...verFields(ver) })
+  const date = new Date().toISOString().slice(0, 10)
+  await downloadBlob(
+    await fetch(`${BASE}/report/oscal`, { method: 'POST', body: form }),
+    `poam_oscal_${date}.json`
+  )
+}
+
+export async function downloadVerReport({ file, vendorOverride = 'Auto Detect', profileName = 'FedRAMP 2026 Class B', ver = null }) {
+  const form = buildForm({ file, vendor_override: vendorOverride, profile_name: profileName, ...verFields(ver) })
+  const date = new Date().toISOString().slice(0, 10)
+  await downloadBlob(
+    await fetch(`${BASE}/report/ver`, { method: 'POST', body: form }),
+    `ver_detail_${date}.json`
+  )
 }
 
 export async function fetchProfiles() {

@@ -7,8 +7,11 @@ const NAV = [
   { key: 'compare',   label: 'Scan comparison', dot: '#1D9E75' },
 ]
 
-const PROFILES = ['FedRAMP Moderate/High', 'PCI DSS', 'NIST 800-53', 'Custom']
-const VENDORS  = ['Auto Detect', 'Nessus', 'Qualys', 'Rapid7']
+const PROFILES = [
+  'FedRAMP Moderate/High', 'FedRAMP 2026 Class B', 'FedRAMP 2026 Class C', 'FedRAMP 2026 Class D',
+  'PCI DSS', 'NIST 800-53', 'Custom',
+]
+const VENDORS  = ['Auto Detect', 'Nessus', 'Qualys', 'Rapid7', 'OpenVAS', 'Wiz', 'Defender']
 
 export default function App() {
   const [page, setPage]           = useState('dashboard')
@@ -48,7 +51,7 @@ export default function App() {
           {/* Logo */}
           <div style={{ padding: '22px 20px 18px', borderBottom: '1px solid #ffffff14' }}>
             <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.02em' }}>VulnAnalyzer</div>
-            <div style={{ fontSize: 11, color: '#6B7FA3', marginTop: 3 }}>Multi-vendor · v1.0</div>
+            <div style={{ fontSize: 11, color: '#6B7FA3', marginTop: 3 }}>Multi-vendor · v1.1</div>
           </div>
 
           {/* Nav */}

@@ -5,20 +5,11 @@ from fastapi.responses import JSONResponse
 
 from core import (
     detect_vendor, normalize_data, clean_and_enrich,
-    compare_scans, COMPLIANCE_PROFILES
+    compare_scans, COMPLIANCE_PROFILES,
+    compute_priority, df_to_records,
 )
 
 router = APIRouter(prefix="/compare", tags=["compare"])
-
-
-def _df_to_records(df: pd.DataFrame) -> list[dict]:
-    out = df.copy()
-    for col in ["first_discovered", "last_observed"]:
-        if col in out.columns:
-            out[col] = out[col].astype(str).replace("NaT", None)
-    out["expired"] = out["expired"].astype(bool)
-    out = out.where(pd.notna(out), None)
-    return out.to_dict(orient="records")
 
 
 def _load_and_enrich(contents: bytes, vendor_override: str, profile: dict):
@@ -27,7 +18,8 @@ def _load_and_enrich(contents: bytes, vendor_override: str, profile: dict):
     if vendor == "Unknown":
         raise HTTPException(400, "Could not detect vendor format.")
     df_norm, _ = normalize_data(df_raw, vendor)
-    return clean_and_enrich(df_norm, profile), vendor
+    # Priority columns let the diff view rank New findings by what matters.
+    return compute_priority(clean_and_enrich(df_norm, profile)), vendor
 
 
 @router.post("")
@@ -56,7 +48,7 @@ async def compare(
             "resolved":  len(resolved),
             "unchanged": len(unchanged),
         },
-        "new":       _df_to_records(new_only),
-        "resolved":  _df_to_records(resolved),
-        "unchanged": _df_to_records(unchanged),
+        "new":       df_to_records(new_only),
+        "resolved":  df_to_records(resolved),
+        "unchanged": df_to_records(unchanged),
     })

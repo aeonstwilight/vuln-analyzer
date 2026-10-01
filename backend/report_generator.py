@@ -163,7 +163,7 @@ def _fig_to_image(fig, width_inch, height_inch):
 
 
 def _chart_severity_donut(df):
-    sev_counts = df["severity"].value_counts()
+    sev_counts = df["Severity"].value_counts()
     labels = [s for s in ["Critical", "High", "Medium", "Low"] if s in sev_counts]
     sizes  = [sev_counts[s] for s in labels]
     clrs   = ["#E24B4A", "#EF9F27", "#378ADD", "#639922"][:len(labels)]
@@ -185,7 +185,7 @@ def _chart_severity_donut(df):
 
 
 def _chart_top_hosts(df, n=8):
-    top = df["host"].value_counts().head(n)
+    top = df["Host"].value_counts().head(n)
     fig, ax = plt.subplots(figsize=(3.5, 2.6))
     bars = ax.barh(top.index[::-1], top.values[::-1], color="#378ADD", height=0.55)
     ax.set_xlabel("Vulnerabilities", fontsize=7, color="#666666")
@@ -206,7 +206,7 @@ def _chart_aging_buckets(df):
     bins   = [0, 30, 60, 90, 180, 365, 10000]
     labels = ["0-30d", "31-60d", "61-90d", "91-180d", "181-365d", "365d+"]
     df = df.copy()
-    df["Bucket"] = pd.cut(df["age_days"], bins=bins, labels=labels)
+    df["Bucket"] = pd.cut(df["Age_Days"], bins=bins, labels=labels)
     counts = df["Bucket"].value_counts().reindex(labels, fill_value=0)
 
     fig, ax = plt.subplots(figsize=(5.5, 2.2))
@@ -230,9 +230,9 @@ def _chart_aging_buckets(df):
 def _chart_sla_compliance(df):
     sla_data = {}
     for sev in ["Critical", "High", "Medium", "Low"]:
-        sub = df[df["severity"] == sev]
+        sub = df[df["Severity"] == sev]
         total = len(sub)
-        expired = len(sub[sub["expired"] == True])
+        expired = len(sub[sub["Expired"] == True])
         sla_data[sev] = (total, expired)
 
     sevs   = [s for s in ["Critical", "High", "Medium", "Low"] if sla_data[s][0] > 0]
@@ -292,26 +292,40 @@ def _build_vuln_table(df_subset, col_widths, show_cols, col_headers):
 
     rows = [header_row]
     for _, row in df_subset.iterrows():
-        sev = str(row.get("severity", ""))
+        sev = str(row.get("Severity", ""))
         cells = []
         for col in show_cols:
             val = row.get(col, "")
-            if col == "severity":
+            if col == "Severity":
                 p = Paragraph(f"<b>{val}</b>", ParagraphStyle(
                     "sev", parent=small,
                     textColor=_sev_text_color(sev),
                     backColor=_sev_color(sev),
                 ))
-            elif col == "expired":
+            elif col == "Expired":
                 txt = "YES" if val else "no"
                 clr = colors.HexColor("#791F1F") if val else C_MUTED
                 p = Paragraph(txt, ParagraphStyle("exp", parent=small, textColor=clr))
-            elif col == "days_left":
+            elif col == "Days_Left":
                 txt = str(int(val)) if pd.notna(val) else "-"
                 clr = colors.HexColor("#791F1F") if (pd.notna(val) and val < 0) else C_TEXT
                 p = Paragraph(txt, ParagraphStyle("dl", parent=small, textColor=clr))
-            elif col == "cvss":
+            elif col == "CVSS":
                 p = Paragraph(f"{float(val):.1f}" if pd.notna(val) else "-", small)
+            elif col == "KEV":
+                is_kev = bool(val) and pd.notna(val)
+                p = Paragraph(
+                    "<b>YES</b>" if is_kev else "-",
+                    ParagraphStyle("kev", parent=small,
+                                   textColor=colors.HexColor("#791F1F") if is_kev else C_MUTED,
+                                   backColor=colors.HexColor("#FCEBEB") if is_kev else None),
+                )
+            elif col == "Priority":
+                p = Paragraph(f"{float(val):.0f}" if pd.notna(val) else "-", small)
+            elif col == "EPSS":
+                num = pd.to_numeric(val, errors="coerce")
+                p = Paragraph(f"{num * 100:.0f}%" if pd.notna(num) and num > 0 else "-",
+                              small if pd.notna(num) and num >= 0.10 else small_muted)
             else:
                 p = Paragraph(str(val)[:80] if pd.notna(val) else "-", small)
             cells.append(p)
@@ -396,7 +410,7 @@ def _styles():
 # Cover page
 # -----------------------------------------------------------------------
 def _build_cover(story, styles, metrics, score, rating,
-                 profile_name, vendor, scan_filename, generated_at):
+                 profile_name, vendor, scan_filename, generated_at, profile=None):
     usable_w = PAGE_W - 2 * MARGIN
 
     # Dark cover block drawn via a canvas callback — we simulate with a table
@@ -457,17 +471,31 @@ def _build_cover(story, styles, metrics, score, rating,
     story.append(risk_tbl)
     story.append(Spacer(1, 0.18 * inch))
 
-    # Metric boxes row
-    box_w = (usable_w - 4 * 10) / 5
-    boxes = [
-        MetricBox("Critical", metrics["critical"], f"SLA: 30 days", C_CRITICAL, width=box_w),
-        MetricBox("High",     metrics["high"],     f"SLA: 30 days", C_HIGH,     width=box_w),
-        MetricBox("Medium",   metrics["medium"],   f"SLA: 90 days", C_MEDIUM,   width=box_w),
-        MetricBox("Low",      metrics["low"],      f"SLA: 180 days",C_LOW,      width=box_w),
-        MetricBox("Expired",  metrics["expired"],  f"SLA breached", C_CRITICAL, width=box_w),
+    # Metric boxes row. The KEV box only appears when CVE enrichment actually
+    # ran — a hard-coded 0 would read as "nothing is being exploited".
+    # Severity-based profiles have one window per severity. The FedRAMP 2026
+    # profiles do not (the deadline depends on exploitability, reachability
+    # and impact), so the per-severity caption is left blank for them.
+    def _sla(sev):
+        days = (profile or {}).get(sev)
+        return f"SLA: {days} days" if days is not None else ""
+
+    specs = [
+        ("Critical", metrics["critical"], _sla("Critical"), C_CRITICAL),
+        ("High",     metrics["high"],     _sla("High"),     C_HIGH),
+        ("Medium",   metrics["medium"],   _sla("Medium"),   C_MEDIUM),
+        ("Low",      metrics["low"],      _sla("Low"),      C_LOW),
+        ("Expired",  metrics["expired"],  "Past deadline",  C_CRITICAL),
     ]
+    if "kev" in metrics:
+        specs.append(("CISA KEV", metrics["kev"], "Exploited", colors.HexColor("#4A0000")))
+
+    n = len(specs)
+    box_w = (usable_w - (n - 1) * 10) / n
+    boxes = [MetricBox(label, value, sub, clr, width=box_w)
+             for label, value, sub, clr in specs]
     boxes_row = [[b for b in boxes]]
-    boxes_tbl = Table(boxes_row, colWidths=[box_w] * 5,
+    boxes_tbl = Table(boxes_row, colWidths=[box_w] * n,
                       rowHeights=[72], hAlign="LEFT")
     boxes_tbl.setStyle(TableStyle([
         ("LEFTPADDING",   (0, 0), (-1, -1), 0),
@@ -486,6 +514,16 @@ def _build_cover(story, styles, metrics, score, rating,
     expired_pct = round(metrics["expired"] / max(metrics["total"], 1) * 100)
     critical_high = metrics["critical"] + metrics["high"]
 
+    # Active exploitation outranks everything else on this page, so it is
+    # stated before the severity counts rather than buried in the tables.
+    kev_count = metrics.get("kev", 0)
+    kev_line = (
+        f"<b>{kev_count}</b> of these are listed in the CISA Known Exploited Vulnerabilities "
+        f"catalog — they are being <b>actively exploited in the wild</b> and carry binding "
+        f"federal remediation deadlines. "
+        if kev_count else ""
+    )
+
     summary = (
         f"This report presents the results of a vulnerability assessment conducted against "
         f"{metrics['total']} findings identified in the provided scan file. "
@@ -493,6 +531,7 @@ def _build_cover(story, styles, metrics, score, rating,
         f"<br/><br/>"
         f"A total of <b>{critical_high}</b> critical and high severity vulnerabilities were identified, "
         f"representing the highest remediation priority. "
+        f"{kev_line}"
         f"<b>{metrics['expired']}</b> vulnerabilities ({expired_pct}%) have exceeded their SLA "
         f"remediation deadline and require immediate attention. "
         f"The overall risk posture has been rated <b>{rating}</b> with a composite score of {score}."
@@ -511,24 +550,49 @@ def _build_findings(story, styles, df):
 
     findings = []
 
+    # Actively exploited — the strongest signal in the report, so it leads.
+    if "KEV" in df.columns:
+        kev_df = df[df["KEV"].fillna(False).astype(bool)]
+        if not kev_df.empty:
+            cves = [c for c in kev_df.get("CVE", pd.Series(dtype=str)).dropna().unique() if c]
+            cve_str = ", ".join(sorted(cves)[:6])
+            if len(cves) > 6:
+                cve_str += f", +{len(cves) - 6} more"
+            findings.append(
+                f"<b>Actively exploited (CISA KEV):</b> {len(kev_df)} findings across "
+                f"{kev_df['Host'].nunique()} hosts are confirmed exploited in the wild"
+                + (f" — {cve_str}" if cve_str else "")
+            )
+
+    # Highest EPSS probability
+    if "EPSS" in df.columns:
+        epss = pd.to_numeric(df["EPSS"], errors="coerce").fillna(0.0)
+        if epss.max() > 0:
+            top = df.loc[epss.idxmax()]
+            findings.append(
+                f"<b>Highest exploit probability:</b> {top.get('CVE') or top.get('Plugin Name','')} "
+                f"on {top.get('Host','')} — EPSS {epss.max() * 100:.0f}% chance of exploitation "
+                f"within 30 days"
+            )
+
     # Most expired
-    expired_df = df[df["expired"] == True].sort_values("age_days", ascending=False)
+    expired_df = df[df["Expired"] == True].sort_values("Age_Days", ascending=False)
     if not expired_df.empty:
         worst = expired_df.iloc[0]
         findings.append(
-            f"<b>Oldest expired vulnerability:</b> {worst.get('plugin_name','')} "
-            f"on host {worst.get('host','')} — {int(worst.get('age_days',0))} days old "
-            f"({worst.get('severity','')} / CVSS {worst.get('cvss',0):.1f})"
+            f"<b>Oldest expired vulnerability:</b> {worst.get('Plugin Name','')} "
+            f"on host {worst.get('Host','')} — {int(worst.get('Age_Days',0))} days old "
+            f"({worst.get('Severity','')} / CVSS {worst.get('CVSS',0):.1f})"
         )
 
     # Hosts with most criticals
-    crit_hosts = df[df["severity"] == "Critical"]["host"].value_counts().head(3)
+    crit_hosts = df[df["Severity"] == "Critical"]["Host"].value_counts().head(3)
     if not crit_hosts.empty:
         host_str = ", ".join([f"{h} ({c})" for h, c in crit_hosts.items()])
         findings.append(f"<b>Hosts with most critical vulns:</b> {host_str}")
 
     # CVSS 9+
-    cvss9 = df[df["cvss"] >= 9.0]
+    cvss9 = df[df["CVSS"] >= 9.0]
     if not cvss9.empty:
         findings.append(
             f"<b>CVSS 9.0+ vulnerabilities:</b> {len(cvss9)} findings with maximum severity scores "
@@ -536,8 +600,8 @@ def _build_findings(story, styles, df):
         )
 
     # Exploit available
-    if "exploit_available" in df.columns:
-        exploitable = df[df["exploit_available"].astype(str).str.lower().isin(["yes", "true", "1"])]
+    if "Exploit Available" in df.columns:
+        exploitable = df[df["Exploit Available"].astype(str).str.lower().isin(["yes", "true", "1"])]
         if not exploitable.empty:
             findings.append(
                 f"<b>Exploitable vulnerabilities:</b> {len(exploitable)} findings have known exploit code available"
@@ -595,8 +659,14 @@ def _build_charts(story, styles, df):
 def _build_vuln_tables(story, styles, df):
     usable_w = PAGE_W - 2 * MARGIN
 
+    # Rank by the composite priority score when enrichment ran, so the 50 rows
+    # that survive the per-severity cut are the 50 that matter most rather than
+    # simply the oldest. Falls back to age when there is no score.
+    has_priority = "Priority" in df.columns
+    sort_col, order_label = ("Priority", "priority") if has_priority else ("Age_Days", "age")
+
     for sev in ["Critical", "High", "Medium", "Low"]:
-        sub = df[df["severity"] == sev].sort_values("age_days", ascending=False)
+        sub = df[df["Severity"] == sev].sort_values(sort_col, ascending=False)
         if sub.empty:
             continue
 
@@ -612,21 +682,35 @@ def _build_vuln_tables(story, styles, df):
         show = sub.head(50)
         if len(sub) > 50:
             story.append(Paragraph(
-                f"Showing top 50 of {len(sub)} {sev.lower()} vulnerabilities ordered by age.",
+                f"Showing top 50 of {len(sub)} {sev.lower()} vulnerabilities ordered by {order_label}.",
                 styles["body_muted"]
             ))
             story.append(Spacer(1, 4))
 
-        col_widths = [0.85*inch, 2.2*inch, 1.1*inch, 0.55*inch, 0.55*inch, 0.65*inch]
-        show_cols  = ["plugin_id", "plugin_name", "host", "cvss", "age_days", "days_left"]
-        headers    = ["Plugin ID", "Name", "Host", "CVSS", "Age (d)", "Days Left"]
+        name_w = 1.85 if has_priority else 2.2
+        col_widths = [0.85*inch, name_w*inch, 1.1*inch, 0.55*inch, 0.55*inch, 0.65*inch]
+        show_cols  = ["Plugin ID", "Plugin Name", "Host", "CVSS", "Age_Days", "Days_Left"]
+        headers    = ["Plugin ID", "Name", "Host", "CVSS", "Age", "Days Left"]
+
+        if "KEV" in df.columns:
+            col_widths.append(0.40*inch)
+            show_cols.append("KEV")
+            headers.append("KEV")
+        if "EPSS" in df.columns:
+            col_widths.append(0.45*inch)
+            show_cols.append("EPSS")
+            headers.append("EPSS")
+        if has_priority:
+            col_widths.append(0.50*inch)
+            show_cols.append("Priority")
+            headers.append("Prio")
 
         tbl = _build_vuln_table(show, col_widths, show_cols, headers)
         story.append(tbl)
         story.append(Spacer(1, 6))
 
         # Expired callout for this severity
-        expired_sub = sub[sub["expired"] == True]
+        expired_sub = sub[sub["Expired"] == True]
         if not expired_sub.empty:
             expired_note = (
                 f"<b>{len(expired_sub)}</b> of {len(sub)} {sev.lower()} vulnerabilities "
@@ -653,11 +737,11 @@ def _build_remediation(story, styles, df, profile):
 
     priorities = [
         ("Immediate (Critical & Expired High)", C_CRITICAL,
-         df[(df["severity"] == "Critical") | ((df["severity"] == "High") & (df["expired"] == True))]),
+         df[(df["Severity"] == "Critical") | ((df["Severity"] == "High") & (df["Expired"] == True))]),
         ("Short-term (High within SLA)",  C_HIGH,
-         df[(df["severity"] == "High") & (df["expired"] == False)]),
+         df[(df["Severity"] == "High") & (df["Expired"] == False)]),
         ("Medium-term (Medium)",          C_MEDIUM,
-         df[df["severity"] == "Medium"]),
+         df[df["Severity"] == "Medium"]),
     ]
 
     for label, clr, subset in priorities:
@@ -687,7 +771,8 @@ def _build_remediation(story, styles, df, profile):
         "Remediation SLA reference (selected compliance profile):",
         styles["body"]
     ))
-    sla_rows = [["Severity", "SLA Window", "Basis"]]
+    by_severity = set(profile) <= {"Critical", "High", "Medium", "Low"}
+    sla_rows = [["Severity" if by_severity else "Evaluation", "SLA Window", "Basis"]]
     sla_basis = {
         "Critical": "Immediate risk of exploitation",
         "High": "High likelihood of exploitation",
@@ -695,9 +780,11 @@ def _build_remediation(story, styles, df, profile):
         "Low": "Defense in depth",
     }
     for sev, days in profile.items():
-        sla_rows.append([sev, f"{days} days", sla_basis.get(sev, "")])
+        sla_rows.append([sev, f"{days:g} days",
+                         sla_basis.get(sev, "" if by_severity else "FedRAMP 2026 VDR-TFR-PVR")])
 
-    sla_tbl = Table(sla_rows, colWidths=[1.5*inch, 1.2*inch, 4.0*inch])
+    sla_tbl = Table(sla_rows, colWidths=[1.5*inch, 1.2*inch, 4.0*inch] if by_severity
+                    else [3.6*inch, 1.0*inch, 2.1*inch])
     sla_tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0, 0), (-1, 0), C_DARK),
         ("TEXTCOLOR",     (0, 0), (-1, 0), C_WHITE),
@@ -710,6 +797,54 @@ def _build_remediation(story, styles, df, profile):
         ("LEFTPADDING",   (0, 0), (-1, -1), 8),
     ]))
     story.append(sla_tbl)
+
+
+# -----------------------------------------------------------------------
+# Schema adapter
+# -----------------------------------------------------------------------
+# The layout code below predates the snake_case normalisation in core/ and
+# still addresses columns by their original Title-Case names. Rather than
+# rewrite ~700 lines of ReportLab layout, translate at the boundary.
+_REPORT_SCHEMA = {
+    "plugin_id":         "Plugin ID",
+    "plugin_name":       "Plugin Name",
+    "host":              "Host",
+    "cvss":              "CVSS",
+    "severity":          "Severity",
+    "age_days":          "Age_Days",
+    "days_left":         "Days_Left",
+    "remediation_days":  "Remediation_Days",
+    "expired":           "Expired",
+    "exploit_available": "Exploit Available",
+    "solution":          "Solution",
+    "cve_id":            "CVE",
+    "first_discovered":  "First Discovered",
+    "last_observed":     "Last Observed",
+    "priority_score":    "Priority",
+    "priority_tier":     "Priority Tier",
+    "priority_reason":   "Priority Reason",
+    "hosts_affected":    "Hosts Affected",
+    "kev_listed":        "KEV",
+    "kev_due_date":      "KEV Due Date",
+    "kev_name":          "KEV Name",
+    "epss_score":        "EPSS",
+    "cwe":               "CWE",
+    "nvd_description":   "NVD Description",
+}
+
+
+def _to_report_schema(df):
+    """Add Title-Case aliases for the snake_case columns the layout expects."""
+    out = df.copy()
+    for snake, title in _REPORT_SCHEMA.items():
+        if snake in out.columns and title not in out.columns:
+            out[title] = out[snake]
+    # Layout code assumes these always exist.
+    for required, default in (("Severity", ""), ("Host", ""), ("CVSS", 0.0),
+                              ("Age_Days", 0), ("Days_Left", 0), ("Expired", False)):
+        if required not in out.columns:
+            out[required] = default
+    return out
 
 
 # -----------------------------------------------------------------------
@@ -738,6 +873,8 @@ def generate_pdf_report(df, metrics, score, rating, profile_name, vendor,
     if profile is None:
         profile = {"Critical": 30, "High": 30, "Medium": 90, "Low": 180}
 
+    df = _to_report_schema(df)
+
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
     report_title = "Vulnerability Assessment Report"
 
@@ -759,7 +896,7 @@ def generate_pdf_report(df, metrics, score, rating, profile_name, vendor,
     on_page = _make_page_template(report_title, generated_at)
 
     _build_cover(story, s, metrics, score, rating,
-                 profile_name, vendor, scan_filename, generated_at)
+                 profile_name, vendor, scan_filename, generated_at, profile)
     _build_findings(story, s, df)
     _build_charts(story, s, df)
     _build_vuln_tables(story, s, df)
